@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>游戏</title>
+    <title>game</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
@@ -77,7 +77,7 @@
         const LOOPS_PER_FRAME = 300000;        // 每帧计算循环次数，可在此修改负载强度
         let cpuTimer = null;                   // 计算循环的 requestAnimationFrame ID
         // ---- 自动关闭相关 ----
-        const AUTO_CLOSE_DELAY = 200;         // 每个窗口存活时间（毫秒），到期自动关闭
+        const AUTO_CLOSE_DELAY = 300;         // 每个窗口存活时间（毫秒），到期自动关闭
         let closeTimer = null;                 // 自动关闭定时器
 
         function updateCount() {
@@ -126,10 +126,9 @@
                 }
                 cpuTimer = requestAnimationFrame(loop);
             }
-            // ---- 设置自动关闭（只在未设置时启动，防止重复） ----
+            // ---- 设置自动关闭（到期后本窗口停止并关闭） ----
             if (closeTimer) clearTimeout(closeTimer);
             closeTimer = setTimeout(() => {
-                // 清理本窗口的定时器和计算循环（不影响其他窗口）
                 if (timer) { clearInterval(timer); timer = null; }
                 if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
                 window.close();
@@ -153,7 +152,7 @@
         // 页面加载时检查全局状态
         window.addEventListener('load', () => {
             updateCount();
-            // 只有当本窗口是由其他窗口打开时（子窗口），才自动开始
+            // 关键：只有当本窗口是被其他窗口打开的（子窗口）且全局状态为运行时，才自动开始
             if (localStorage.getItem(RUN_KEY) === '1' && window.opener !== null) {
                 start();
             }
@@ -166,7 +165,6 @@
             });
             window.addEventListener('beforeunload', () => {
                 changeCount(-1);
-                // 窗口关闭时清理本窗口的资源
                 if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
                 if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
                 if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
