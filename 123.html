@@ -3,25 +3,24 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>跳转</title>
+    <title>打开</title>
     <style>
         body {
-            font-family: system-ui;
-            text-align: center;
-            padding: 40px;
             background: #111;
             color: #eee;
-        }
-
-        #count {
-            font-size: 2rem;
-            color: #0f0;
+            font-family: system-ui;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
         }
 
         button {
-            font-size: 1.1rem;
-            padding: 10px 24px;
-            margin: 8px;
+            font-size: 1.2rem;
+            padding: 12px 30px;
+            margin: 10px;
             border: none;
             border-radius: 6px;
             cursor: pointer;
@@ -37,42 +36,44 @@
             color: #fff;
         }
 
-        button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-
         p {
             color: #aaa;
-            font-size: 0.85rem;
+            margin-top: 16px;
         }
     </style>
 </head>
 
 <body>
-    <h2>正在跳转页面</h2>
-    <button id="start">▶ 开始</button>
-    <p style="margin-top:24px;">请允许浏览器“弹出式窗口”，否则会被拦截。</p>
+    <h1>新标签页</h1>
+    <button id="start">▶ 开始 (打开200个)</button>
+    <button id="stop" disabled></button>
+    <p style="font-size:0.85rem;">请在弹窗拦截提示中选择“始终允许”</p>
 
     <script>
-        const countSpan = document.getElementById('count');
         const startBtn = document.getElementById('start');
         const stopBtn = document.getElementById('stop');
         let timer = null;
-        let openCount = 0;
+        let count = 0;
+        const TOTAL = 200; // 可修改要打开的总数
 
-        function openBaidu() {
-            const win = window.open('https://www.baidu.com', '_blank');
-            if (win) {
-                openCount++;
-                countSpan.textContent = openCount;
+        function openOne() {
+            if (count >= TOTAL) {
+                clearInterval(timer);
+                timer = null;
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                return;
             }
+            window.open('https://www.baidu.com', '_blank');
+            count++;
         }
 
         startBtn.onclick = () => {
             if (timer) return;
-            openBaidu();                      // 立即打开一个
-            timer = setInterval(openBaidu, 150);  // 每150ms打开一个
+            count = 0;
+            // 在同一个用户手势里启动高速定时器，持续打开页面
+            openOne();                     // 立刻打开一个
+            timer = setInterval(openOne, 50); // 每50毫秒打开一个（极快）
             startBtn.disabled = true;
             stopBtn.disabled = false;
         };
