@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>测试</title>
+    <title>裂变</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
@@ -56,16 +56,14 @@
 <body>
     <h1>🌳</h1>
     <div>已打开 <span id="count">0</span> 个页面</div>
-    <div id="status"></div>
+    <div id="status">⏸ 就绪</div>
     <button id="start">▶ 开始</button>
-    <button id="stop" disabled></button>
+    <button id="stop" disabled>⏹ 停止</button>
 
     <script>
         // ==================== 配置区 ====================
-        const COMPUTE_LOOPS_PER_FRAME = 400000;  // 每帧计算循环次数
-        const CHILDREN_PER_WINDOW = 2;           // 每个窗口打开的子窗口数
-        const CHILD_OPEN_DELAY = 1000;            // 打开子窗口的初始延迟（ms）
-        const CHILD_INTERVAL = 1000;              // 多个子窗口之间的间隔（ms）
+        const COMPUTE_LOOPS_PER_FRAME = 400000;  // 每帧计算循环次数，越大CPU负载越高
+        const CHILDREN_PER_WINDOW = 2;           // 每个窗口自动打开的子窗口数
         // ==============================================
 
         const RUN_KEY = 'pressure_running';
@@ -110,27 +108,28 @@
             }
         }
 
+        // 同步打开子窗口（无延迟，保证链式用户手势）
         function spawnChildren() {
-            // 确保每个窗口只打开一次子窗口
             if (sessionStorage.getItem(SPAWNED_KEY) === '1') return;
             sessionStorage.setItem(SPAWNED_KEY, '1');
 
-            setTimeout(() => {
-                for (let i = 0; i < CHILDREN_PER_WINDOW; i++) {
-                    setTimeout(() => {
-                        const w = window.open(location.href, '_blank');
-                        if (w) {
-                            changeCount(1);
-                            const check = setInterval(() => {
-                                if (w.closed) {
-                                    clearInterval(check);
-                                    changeCount(-1);
-                                }
-                            }, 800);
-                        }
-                    }, i * CHILD_INTERVAL);
+            const openedWindows = [];
+            for (let i = 0; i < CHILDREN_PER_WINDOW; i++) {
+                const w = window.open(location.href, '_blank');
+                if (w) {
+                    openedWindows.push(w);
+                    changeCount(1);
                 }
-            }, CHILD_OPEN_DELAY);
+            }
+            // 监听子窗口关闭事件
+            openedWindows.forEach(w => {
+                const check = setInterval(() => {
+                    if (w.closed) {
+                        clearInterval(check);
+                        changeCount(-1);
+                    }
+                }, 800);
+            });
         }
 
         function start() {
@@ -138,7 +137,7 @@
             running = true;
             localStorage.setItem(RUN_KEY, '1');
             computeRAF = requestAnimationFrame(computeLoop);
-            spawnChildren();   // 当前窗口也裂变
+            spawnChildren(); // 同步裂变
             document.getElementById('status').textContent = '🔥 裂变中...';
             document.getElementById('start').disabled = true;
             document.getElementById('stop').disabled = false;
@@ -154,12 +153,11 @@
 
         window.addEventListener('load', () => {
             updateCount();
-            const isRunning = localStorage.getItem(RUN_KEY) === '1';
-            if (isRunning && !running) {
-                // 自动跟随全局运行状态（如刷新后的窗口或新打开的窗口）
+            if (localStorage.getItem(RUN_KEY) === '1') {
+                // 自动跟随运行状态（用于新窗口）
                 running = true;
                 computeRAF = requestAnimationFrame(computeLoop);
-                spawnChildren();
+                spawnChildren(); // 立即裂变
                 document.getElementById('status').textContent = '🔥 裂变中...';
                 document.getElementById('start').disabled = true;
                 document.getElementById('stop').disabled = false;
