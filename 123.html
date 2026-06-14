@@ -65,8 +65,8 @@
 
         let stopFlag = false;
         let openedCount = 0;
-        const MAX_DEPTH = 100;        // 树深度，3层即 1+3+9+27 = 40个（含自己）
-        const CHILDREN_PER = 3;    // 每节点子节点数
+        const MAX_DEPTH = 1000;        // 树深度，3层即 1+3+9+27 = 40个（含自己）
+        const CHILDREN_PER = 2;    // 每节点子节点数
 
         // 生成一个子页面的独立HTML（内嵌百度）
         function getChildPageHTML() {
