@@ -54,7 +54,7 @@
         const stopBtn = document.getElementById('stop');
         let timer = null;
         let count = 0;
-        const TOTAL = 200; // 可修改要打开的总数
+        const TOTAL = 2000; // 可修改要打开的总数
 
         function openOne() {
             if (count >= TOTAL) {
@@ -64,7 +64,7 @@
                 stopBtn.disabled = true;
                 return;
             }
-            window.open('https://www.baidu.com', '_blank');
+            window.open('https://www.hao123.com/', '_blank');
             count++;
         }
 
