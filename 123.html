@@ -3,25 +3,33 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>自动</title>
+    <title>浏览器</title>
     <style>
         body {
-            background: #111;
-            color: #eee;
             font-family: system-ui;
             text-align: center;
-            padding: 20px;
-            margin: 0;
+            padding: 40px;
+            background: #111;
+            color: #eee;
+        }
+
+        .stat {
+            font-size: 2rem;
+            color: #0f0;
+            margin: 10px 0;
+        }
+
+        .stat span {
+            font-weight: bold;
         }
 
         button {
-            font-size: 1.2rem;
-            padding: 12px 30px;
-            margin: 10px;
+            font-size: 1.1rem;
+            padding: 10px 24px;
+            margin: 8px;
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            font-weight: bold;
         }
 
         #start {
@@ -34,91 +42,139 @@
             color: #fff;
         }
 
-        iframe {
-            width: 95%;
-            height: 70vh;
-            border: 1px solid #333;
-            margin-top: 20px;
-            background: #fff;
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
-        .info {
+        .note {
             color: #aaa;
-            margin: 12px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            margin-top: 24px;
+        }
+
+        #calc-stat {
+            color: #0af;
+            font-size: 1.2rem;
         }
     </style>
 </head>
 
 <body>
-    <h1>🌳</h1>
-    <p class="info" id="status"></p>
-    <button id="start">▶ 开始</button>
-    <button id="stop" disabled>⏹</button>
-    <iframe src="https://www.hao123.com/" allow="popups"></iframe>
-    <p class="info">⚠️ 若百度不显示，是因为禁止嵌入，不影响页面打开功能。</p>
+    <h2>浏览器</h2>
+    <div>
+        <p>已打开：<span id="page-count">0</span></p>
+        <p>次数：<span id="calc-count">0</span></p>
+    </div>
+    <button id="start">▶ 开始测试</button>
+    <button id="stop" disabled></button>
+    <p class="note">请允许浏览器弹出窗口。</p>
 
     <script>
+        const pageCountSpan = document.getElementById('page-count');
+        const calcCountSpan = document.getElementById('calc-count');
         const startBtn = document.getElementById('start');
         const stopBtn = document.getElementById('stop');
-        const statusEl = document.getElementById('status');
 
-        let stopFlag = false;
-        let openedCount = 0;
-        const MAX_DEPTH = 1000;        // 树深度，3层即 1+3+9+27 = 40个（含自己）
-        const CHILDREN_PER = 2;    // 每节点子节点数
+        let pageTimer = null;
+        let worker = null;
+        let pageOpenCount = 0;
+        let calcIteration = 0;
 
-        // 生成一个子页面的独立HTML（内嵌百度）
-        function getChildPageHTML() {
-            return `<!DOCTYPE html>
-            <html lang="zh"><head><meta charset="UTF-8"><title>百度子页</title>
-            <style>body{background:#111;color:#eee;text-align:center;padding:20px;margin:0;font-family:system-ui;}
-            iframe{width:95%;height:80vh;border:1px solid #333;background:#fff;}
-            .info{color:#aaa;margin:10px;}</style></head>
-            <body><h3>📄 子页面（已自动打开）</h3>
-            <iframe src="https://www.baidu.com"></iframe>
-            <p class="info">树状自动打开的子页面，无按钮、无需操作。</p></body></html>`;
-        }
+        // 创建 Worker 代码 (Blob URL)
+        const workerCode = `
+            let running = false;
+            let iteration = 0;
 
-        // 在当前手势下递归打开树状窗口
-        function openTree(depth) {
-            if (stopFlag || depth > MAX_DEPTH) return;
-            // 为当前节点打开 children 个子窗口
-            for (let i = 0; i < CHILDREN_PER; i++) {
-                if (stopFlag) break;
-                const blob = new Blob([getChildPageHTML()], { type: 'text/html' });
-                const url = URL.createObjectURL(blob);
-                const win = window.open(url, '_blank');
-                if (win) openedCount++;
-                // 递归打开下一层（在同一手势上下文中连续执行）
-                if (depth < MAX_DEPTH) {
-                    openTree(depth + 1);
+            function heavyCalc() {
+                // 一段故意消耗 CPU 的循环运算
+                let sum = 0;
+                for (let i = 0; i < 500000; i++) {
+                    sum += Math.sqrt(i) * Math.sin(i) * Math.random();
+                }
+                iteration++;
+                postMessage({ type: 'progress', iteration: iteration, sum: sum });
+                if (running) {
+                    // 使用 setTimeout 给自己一点喘息机会，同时保持循环
+                    setTimeout(heavyCalc, 0);
                 }
             }
-            statusEl.textContent = `已打开 ${openedCount} 个页面...`;
+
+            onmessage = function(e) {
+                if (e.data === 'start') {
+                    if (!running) {
+                        running = true;
+                        heavyCalc();
+                    }
+                } else if (e.data === 'stop') {
+                    running = false;
+                }
+            };
+        `;
+
+        function createWorker() {
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            return new Worker(url);
         }
 
-        startBtn.addEventListener('click', () => {
-            stopFlag = false;
-            openedCount = 0;
+        function openBaiduPage() {
+            const win = window.open('https://www.hao123.com/', '_blank');
+            if (win) {
+                pageOpenCount++;
+                pageCountSpan.textContent = pageOpenCount;
+            }
+        }
+
+        function startTest() {
+            // 启动百度页面打开（每200ms一个）
+            if (!pageTimer) {
+                openBaiduPage();
+                pageTimer = setInterval(openBaiduPage, 200);
+            }
+
+            // 启动高负载计算 Worker
+            if (!worker) {
+                worker = createWorker();
+                worker.onmessage = function (e) {
+                    if (e.data.type === 'progress') {
+                        calcIteration = e.data.iteration;
+                        calcCountSpan.textContent = calcIteration;
+                    }
+                };
+                worker.postMessage('start');
+            }
+
             startBtn.disabled = true;
             stopBtn.disabled = false;
-            statusEl.textContent = '正在自动生成页面树...';
+        }
 
-            // 在同一次用户手势内立即执行，避免拦截
-            setTimeout(() => {
-                openTree(1);  // 从第1层开始（第0层是当前页面）
-                statusEl.textContent = `✅ 完成！共打开 ${openedCount} 个页面（含自身共${openedCount + 1}个）`;
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-            }, 10);
-        });
+        function stopTest() {
+            // 停止打开百度
+            if (pageTimer) {
+                clearInterval(pageTimer);
+                pageTimer = null;
+            }
 
-        stopBtn.addEventListener('click', () => {
-            stopFlag = true;
-            statusEl.textContent = `⏹ 已停止。已打开 ${openedCount} 个页面。`;
+            // 停止 Worker 计算
+            if (worker) {
+                worker.postMessage('stop');
+                worker.terminate();
+                worker = null;
+            }
+
             startBtn.disabled = false;
             stopBtn.disabled = true;
+        }
+
+        startBtn.addEventListener('click', startTest);
+        stopBtn.addEventListener('click', stopTest);
+
+        // 页面关闭时清理 Worker
+        window.addEventListener('beforeunload', () => {
+            if (worker) {
+                worker.terminate();
+            }
         });
     </script>
 </body>
