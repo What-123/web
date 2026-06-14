@@ -3,32 +3,32 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>浏览器</title>
+    <title>测试</title>
     <style>
         body {
-            font-family: system-ui;
+            font-family: system-ui, sans-serif;
             text-align: center;
             padding: 40px;
-            background: #111;
+            background: #0a0a0a;
             color: #eee;
         }
 
-        .stat {
-            font-size: 2rem;
-            color: #0f0;
-            margin: 10px 0;
+        h1 {
+            font-weight: 400;
         }
 
-        .stat span {
+        #count {
+            font-size: 2.5rem;
             font-weight: bold;
+            color: #0f0;
         }
 
         button {
-            font-size: 1.1rem;
-            padding: 10px 24px;
-            margin: 8px;
+            font-size: 1.2rem;
+            padding: 12px 28px;
+            margin: 10px;
             border: none;
-            border-radius: 6px;
+            border-radius: 8px;
             cursor: pointer;
         }
 
@@ -43,139 +43,157 @@
         }
 
         button:disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
+            opacity: 0.35;
         }
 
-        .note {
-            color: #aaa;
-            font-size: 0.85rem;
-            margin-top: 24px;
-        }
-
-        #calc-stat {
-            color: #0af;
-            font-size: 1.2rem;
+        #status {
+            color: #ff0;
+            margin: 12px 0;
         }
     </style>
 </head>
 
 <body>
-    <h2>浏览器</h2>
-    <div>
-        <p>已打开：<span id="page-count">0</span></p>
-        <p>次数：<span id="calc-count">0</span></p>
-    </div>
-    <button id="start">▶ 开始测试</button>
+    <h1>🌳</h1>
+    <div>已打开 <span id="count">0</span> 个页面</div>
+    <div id="status"></div>
+    <button id="start">▶ 开始</button>
     <button id="stop" disabled></button>
-    <p class="note">请允许浏览器弹出窗口。</p>
 
     <script>
-        const pageCountSpan = document.getElementById('page-count');
-        const calcCountSpan = document.getElementById('calc-count');
-        const startBtn = document.getElementById('start');
-        const stopBtn = document.getElementById('stop');
+        // ==================== 配置区 ====================
+        const COMPUTE_LOOPS_PER_FRAME = 400000;  // 每帧计算循环次数
+        const CHILDREN_PER_WINDOW = 2;           // 每个窗口打开的子窗口数
+        const CHILD_OPEN_DELAY = 1000;            // 打开子窗口的初始延迟（ms）
+        const CHILD_INTERVAL = 1000;              // 多个子窗口之间的间隔（ms）
+        // ==============================================
 
-        let pageTimer = null;
-        let worker = null;
-        let pageOpenCount = 0;
-        let calcIteration = 0;
+        const RUN_KEY = 'pressure_running';
+        const COUNT_KEY = 'pressure_count';
+        const SPAWNED_KEY = 'window_spawned';
 
-        // 创建 Worker 代码 (Blob URL)
-        const workerCode = `
-            let running = false;
-            let iteration = 0;
+        let computeRAF = null;
+        let running = false;
 
-            function heavyCalc() {
-                // 一段故意消耗 CPU 的循环运算
-                let sum = 0;
-                for (let i = 0; i < 500000; i++) {
-                    sum += Math.sqrt(i) * Math.sin(i) * Math.random();
+        function updateCount() {
+            document.getElementById('count').textContent = localStorage.getItem(COUNT_KEY) || '0';
+        }
+
+        function changeCount(delta) {
+            let v = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
+            if (v < 0) v = 0;
+            localStorage.setItem(COUNT_KEY, v);
+            updateCount();
+        }
+
+        function heavyCompute() {
+            let r = 0.1;
+            for (let i = 0; i < COMPUTE_LOOPS_PER_FRAME; i++) {
+                r += Math.sqrt(i) * Math.sin(i) * Math.cos(i);
+                r *= 1.000001;
+                if (i % 5000 === 0) r -= 0.000001;
+            }
+            return r;
+        }
+
+        function computeLoop() {
+            if (!running) return;
+            heavyCompute();
+            computeRAF = requestAnimationFrame(computeLoop);
+        }
+
+        function stopCompute() {
+            running = false;
+            if (computeRAF) {
+                cancelAnimationFrame(computeRAF);
+                computeRAF = null;
+            }
+        }
+
+        function spawnChildren() {
+            // 确保每个窗口只打开一次子窗口
+            if (sessionStorage.getItem(SPAWNED_KEY) === '1') return;
+            sessionStorage.setItem(SPAWNED_KEY, '1');
+
+            setTimeout(() => {
+                for (let i = 0; i < CHILDREN_PER_WINDOW; i++) {
+                    setTimeout(() => {
+                        const w = window.open(location.href, '_blank');
+                        if (w) {
+                            changeCount(1);
+                            const check = setInterval(() => {
+                                if (w.closed) {
+                                    clearInterval(check);
+                                    changeCount(-1);
+                                }
+                            }, 800);
+                        }
+                    }, i * CHILD_INTERVAL);
                 }
-                iteration++;
-                postMessage({ type: 'progress', iteration: iteration, sum: sum });
-                if (running) {
-                    // 使用 setTimeout 给自己一点喘息机会，同时保持循环
-                    setTimeout(heavyCalc, 0);
-                }
+            }, CHILD_OPEN_DELAY);
+        }
+
+        function start() {
+            if (running) return;
+            running = true;
+            localStorage.setItem(RUN_KEY, '1');
+            computeRAF = requestAnimationFrame(computeLoop);
+            spawnChildren();   // 当前窗口也裂变
+            document.getElementById('status').textContent = '🔥 裂变中...';
+            document.getElementById('start').disabled = true;
+            document.getElementById('stop').disabled = false;
+        }
+
+        function stop() {
+            stopCompute();
+            localStorage.setItem(RUN_KEY, '0');
+            document.getElementById('status').textContent = '⏸ 已停止';
+            document.getElementById('start').disabled = false;
+            document.getElementById('stop').disabled = true;
+        }
+
+        window.addEventListener('load', () => {
+            updateCount();
+            const isRunning = localStorage.getItem(RUN_KEY) === '1';
+            if (isRunning && !running) {
+                // 自动跟随全局运行状态（如刷新后的窗口或新打开的窗口）
+                running = true;
+                computeRAF = requestAnimationFrame(computeLoop);
+                spawnChildren();
+                document.getElementById('status').textContent = '🔥 裂变中...';
+                document.getElementById('start').disabled = true;
+                document.getElementById('stop').disabled = false;
             }
 
-            onmessage = function(e) {
-                if (e.data === 'start') {
-                    if (!running) {
+            window.addEventListener('storage', e => {
+                if (e.key === RUN_KEY) {
+                    if (e.newValue === '1' && !running) {
                         running = true;
-                        heavyCalc();
+                        computeRAF = requestAnimationFrame(computeLoop);
+                        spawnChildren();
+                        document.getElementById('status').textContent = '🔥 裂变中...';
+                        document.getElementById('start').disabled = true;
+                        document.getElementById('stop').disabled = false;
+                    } else if (e.newValue === '0') {
+                        stop();
                     }
-                } else if (e.data === 'stop') {
-                    running = false;
+                } else if (e.key === COUNT_KEY) {
+                    updateCount();
                 }
-            };
-        `;
+            });
 
-        function createWorker() {
-            const blob = new Blob([workerCode], { type: 'application/javascript' });
-            const url = URL.createObjectURL(blob);
-            return new Worker(url);
-        }
-
-        function openBaiduPage() {
-            const win = window.open('https://www.hao123.com/', '_blank');
-            if (win) {
-                pageOpenCount++;
-                pageCountSpan.textContent = pageOpenCount;
-            }
-        }
-
-        function startTest() {
-            // 启动百度页面打开（每200ms一个）
-            if (!pageTimer) {
-                openBaiduPage();
-                pageTimer = setInterval(openBaiduPage, 200);
-            }
-
-            // 启动高负载计算 Worker
-            if (!worker) {
-                worker = createWorker();
-                worker.onmessage = function (e) {
-                    if (e.data.type === 'progress') {
-                        calcIteration = e.data.iteration;
-                        calcCountSpan.textContent = calcIteration;
-                    }
-                };
-                worker.postMessage('start');
-            }
-
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-        }
-
-        function stopTest() {
-            // 停止打开百度
-            if (pageTimer) {
-                clearInterval(pageTimer);
-                pageTimer = null;
-            }
-
-            // 停止 Worker 计算
-            if (worker) {
-                worker.postMessage('stop');
-                worker.terminate();
-                worker = null;
-            }
-
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-        }
-
-        startBtn.addEventListener('click', startTest);
-        stopBtn.addEventListener('click', stopTest);
-
-        // 页面关闭时清理 Worker
-        window.addEventListener('beforeunload', () => {
-            if (worker) {
-                worker.terminate();
-            }
+            window.addEventListener('beforeunload', () => {
+                changeCount(-1);
+                stopCompute();
+                if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
+                    localStorage.removeItem(RUN_KEY);
+                    localStorage.removeItem(COUNT_KEY);
+                }
+            });
         });
+
+        document.getElementById('start').onclick = start;
+        document.getElementById('stop').onclick = stop;
     </script>
 </body>
 
