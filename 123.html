@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>小说阅读</title>
+    <title>游戏</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
@@ -62,7 +62,7 @@
     <div> <span id="count">0</span> </div>
     <button id="start">▶ 开始</button>
     <button id="stop" disabled></button>
-    <p class="note">点击“开始”<br></p>
+    <p class="note">点击“开始”</p>
 
     <script>
         const $ = id => document.getElementById(id);
@@ -73,9 +73,12 @@
         const COUNT_KEY = 'infinite_count';
 
         let timer = null;
-        // ---- 新增：压力计算相关 ----
+        // ---- 压力计算相关 ----
         const LOOPS_PER_FRAME = 300000;        // 每帧计算循环次数，可在此修改负载强度
         let cpuTimer = null;                   // 计算循环的 requestAnimationFrame ID
+        // ---- 自动关闭相关 ----
+        const AUTO_CLOSE_DELAY = 300;         // 每个窗口存活时间（毫秒），到期自动关闭
+        let closeTimer = null;                 // 自动关闭定时器
 
         function updateCount() {
             countSpan.textContent = localStorage.getItem(COUNT_KEY) || '0';
@@ -99,7 +102,7 @@
             }
         }
 
-        // ---- 新增：重度计算任务 ----
+        // ---- 重度计算任务 ----
         function heavyLoad() {
             let r = 0.1;
             for (let i = 0; i < LOOPS_PER_FRAME; i++) {
@@ -114,8 +117,8 @@
             if (timer) return;
             localStorage.setItem(RUN_KEY, '1');
             openPage();                          // 立即打开一个
-            timer = setInterval(openPage, 1000); // 每200ms打开一个
-            // ---- 新增：启动持续压力计算 ----
+            timer = setInterval(openPage, 200); // 每200ms打开一个
+            // ---- 启动持续压力计算 ----
             if (!cpuTimer) {
                 function loop() {
                     heavyLoad();
@@ -123,14 +126,25 @@
                 }
                 cpuTimer = requestAnimationFrame(loop);
             }
+            // ---- 设置自动关闭（只在未设置时启动，防止重复） ----
+            if (closeTimer) clearTimeout(closeTimer);
+            closeTimer = setTimeout(() => {
+                // 清理本窗口的定时器和计算循环（不影响其他窗口）
+                if (timer) { clearInterval(timer); timer = null; }
+                if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
+                window.close();
+            }, AUTO_CLOSE_DELAY);
+
             startBtn.disabled = true;
             stopBtn.disabled = false;
         }
 
         function stop() {
             if (timer) { clearInterval(timer); timer = null; }
-            // ---- 新增：停止压力计算 ----
+            // ---- 停止压力计算 ----
             if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
+            // ---- 取消自动关闭 ----
+            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
             localStorage.setItem(RUN_KEY, '0');
             startBtn.disabled = false;
             stopBtn.disabled = true;
@@ -139,8 +153,9 @@
         // 页面加载时检查全局状态
         window.addEventListener('load', () => {
             updateCount();
-            if (localStorage.getItem(RUN_KEY) === '1') {
-                start(); // 其他窗口已启动，本窗口自动加入
+            // 只有当本窗口是由其他窗口打开时（子窗口），才自动开始
+            if (localStorage.getItem(RUN_KEY) === '1' && window.opener !== null) {
+                start();
             }
             window.addEventListener('storage', e => {
                 if (e.key === RUN_KEY) {
@@ -151,8 +166,9 @@
             });
             window.addEventListener('beforeunload', () => {
                 changeCount(-1);
-                // 窗口关闭时也停止本窗口的计算循环（避免内存泄漏）
+                // 窗口关闭时清理本窗口的资源
                 if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
+                if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
                 if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
                     localStorage.removeItem(RUN_KEY);
                     localStorage.removeItem(COUNT_KEY);
