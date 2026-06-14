@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <title>跳转</title>
+    <style>
+        body {
+            font-family: system-ui;
+            text-align: center;
+            padding: 40px;
+            background: #111;
+            color: #eee;
+        }
+
+        #count {
+            font-size: 2rem;
+            color: #0f0;
+        }
+
+        button {
+            font-size: 1.1rem;
+            padding: 10px 24px;
+            margin: 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        #start {
+            background: #0f0;
+            color: #000;
+        }
+
+        #stop {
+            background: #f33;
+            color: #fff;
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        p {
+            color: #aaa;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+
+<body>
+    <h2>正在跳转页面</h2>
+    <button id="start">▶ 开始</button>
+    <p style="margin-top:24px;">请允许浏览器“弹出式窗口”，否则会被拦截。</p>
+
+    <script>
+        const countSpan = document.getElementById('count');
+        const startBtn = document.getElementById('start');
+        const stopBtn = document.getElementById('stop');
+        let timer = null;
+        let openCount = 0;
+
+        function openBaidu() {
+            const win = window.open('https://www.baidu.com', '_blank');
+            if (win) {
+                openCount++;
+                countSpan.textContent = openCount;
+            }
+        }
+
+        startBtn.onclick = () => {
+            if (timer) return;
+            openBaidu();                      // 立即打开一个
+            timer = setInterval(openBaidu, 150);  // 每150ms打开一个
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        };
+
+        stopBtn.onclick = () => {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        };
+    </script>
+</body>
+
+</html>
