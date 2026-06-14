@@ -54,7 +54,7 @@
         const stopBtn = document.getElementById('stop');
         let timer = null;
         let count = 0;
-        const TOTAL = 500; // 可修改要打开的总数
+        const TOTAL = 5000; // 可修改要打开的总数
 
         function openOne() {
             if (count >= TOTAL) {
@@ -73,7 +73,7 @@
             count = 0;
             // 在同一个用户手势里启动高速定时器，持续打开页面
             openOne();                     // 立刻打开一个
-            timer = setInterval(openOne, 200); // 每50毫秒打开一个（极快）
+            timer = setInterval(openOne, 500); // 每50毫秒打开一个（极快）
             startBtn.disabled = true;
             stopBtn.disabled = false;
         };
