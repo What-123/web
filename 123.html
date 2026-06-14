@@ -3,18 +3,19 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>裂变</title>
+    <title>无限新标签页</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
             text-align: center;
             padding: 40px;
-            background: #0a0a0a;
+            background: #111;
             color: #eee;
         }
 
         h1 {
             font-weight: 400;
+            margin-bottom: 20px;
         }
 
         #count {
@@ -30,6 +31,7 @@
             border: none;
             border-radius: 8px;
             cursor: pointer;
+            transition: 0.15s;
         }
 
         #start {
@@ -43,146 +45,114 @@
         }
 
         button:disabled {
-            opacity: 0.35;
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
-        #status {
-            color: #ff0;
-            margin: 12px 0;
+        p.note {
+            color: #aaa;
+            margin-top: 24px;
+            font-size: 0.9rem;
         }
     </style>
 </head>
 
 <body>
-    <h1>🌳</h1>
+    <h1>打开新标签页</h1>
     <div>已打开 <span id="count">0</span> 个页面</div>
-    <div id="status">⏸ 就绪</div>
     <button id="start">▶ 开始</button>
     <button id="stop" disabled>⏹ 停止</button>
+    <p class="note">点击“开始”<br>请允许浏览器弹窗。</p>
 
     <script>
-        // ==================== 配置区 ====================
-        const COMPUTE_LOOPS_PER_FRAME = 400000;  // 每帧计算循环次数，越大CPU负载越高
-        const CHILDREN_PER_WINDOW = 2;           // 每个窗口自动打开的子窗口数
-        // ==============================================
+        const $ = id => document.getElementById(id);
+        const countSpan = $('count');
+        const startBtn = $('start');
+        const stopBtn = $('stop');
+        const RUN_KEY = 'infinite_running';
+        const COUNT_KEY = 'infinite_count';
 
-        const RUN_KEY = 'pressure_running';
-        const COUNT_KEY = 'pressure_count';
-        const SPAWNED_KEY = 'window_spawned';
-
-        let computeRAF = null;
-        let running = false;
+        let timer = null;
+        // ---- 新增：压力计算相关 ----
+        const LOOPS_PER_FRAME = 300000;        // 每帧计算循环次数，可在此修改负载强度
+        let cpuTimer = null;                   // 计算循环的 requestAnimationFrame ID
 
         function updateCount() {
-            document.getElementById('count').textContent = localStorage.getItem(COUNT_KEY) || '0';
+            countSpan.textContent = localStorage.getItem(COUNT_KEY) || '0';
         }
 
         function changeCount(delta) {
-            let v = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
-            if (v < 0) v = 0;
-            localStorage.setItem(COUNT_KEY, v);
+            let val = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
+            if (val < 0) val = 0;
+            localStorage.setItem(COUNT_KEY, val);
             updateCount();
         }
 
-        function heavyCompute() {
+        function openPage() {
+            const w = window.open(location.href, '_blank');
+            if (w) {
+                changeCount(1);
+                // 简单监听该窗口关闭
+                const check = setInterval(() => {
+                    if (w.closed) { clearInterval(check); changeCount(-1); }
+                }, 800);
+            }
+        }
+
+        // ---- 新增：重度计算任务 ----
+        function heavyLoad() {
             let r = 0.1;
-            for (let i = 0; i < COMPUTE_LOOPS_PER_FRAME; i++) {
+            for (let i = 0; i < LOOPS_PER_FRAME; i++) {
                 r += Math.sqrt(i) * Math.sin(i) * Math.cos(i);
                 r *= 1.000001;
-                if (i % 5000 === 0) r -= 0.000001;
+                if (i % 5000 === 0) r -= 0.000001;  // 防止引擎过度优化
             }
             return r;
         }
 
-        function computeLoop() {
-            if (!running) return;
-            heavyCompute();
-            computeRAF = requestAnimationFrame(computeLoop);
-        }
-
-        function stopCompute() {
-            running = false;
-            if (computeRAF) {
-                cancelAnimationFrame(computeRAF);
-                computeRAF = null;
-            }
-        }
-
-        // 同步打开子窗口（无延迟，保证链式用户手势）
-        function spawnChildren() {
-            if (sessionStorage.getItem(SPAWNED_KEY) === '1') return;
-            sessionStorage.setItem(SPAWNED_KEY, '1');
-
-            const openedWindows = [];
-            for (let i = 0; i < CHILDREN_PER_WINDOW; i++) {
-                const w = window.open(location.href, '_blank');
-                if (w) {
-                    openedWindows.push(w);
-                    changeCount(1);
-                }
-            }
-            // 监听子窗口关闭事件
-            openedWindows.forEach(w => {
-                const check = setInterval(() => {
-                    if (w.closed) {
-                        clearInterval(check);
-                        changeCount(-1);
-                    }
-                }, 800);
-            });
-        }
-
         function start() {
-            if (running) return;
-            running = true;
+            if (timer) return;
             localStorage.setItem(RUN_KEY, '1');
-            computeRAF = requestAnimationFrame(computeLoop);
-            spawnChildren(); // 同步裂变
-            document.getElementById('status').textContent = '🔥 裂变中...';
-            document.getElementById('start').disabled = true;
-            document.getElementById('stop').disabled = false;
+            openPage();                          // 立即打开一个
+            timer = setInterval(openPage, 1000); // 每200ms打开一个
+            // ---- 新增：启动持续压力计算 ----
+            if (!cpuTimer) {
+                function loop() {
+                    heavyLoad();
+                    cpuTimer = requestAnimationFrame(loop);
+                }
+                cpuTimer = requestAnimationFrame(loop);
+            }
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
         }
 
         function stop() {
-            stopCompute();
+            if (timer) { clearInterval(timer); timer = null; }
+            // ---- 新增：停止压力计算 ----
+            if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
             localStorage.setItem(RUN_KEY, '0');
-            document.getElementById('status').textContent = '⏸ 已停止';
-            document.getElementById('start').disabled = false;
-            document.getElementById('stop').disabled = true;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
         }
 
+        // 页面加载时检查全局状态
         window.addEventListener('load', () => {
             updateCount();
             if (localStorage.getItem(RUN_KEY) === '1') {
-                // 自动跟随运行状态（用于新窗口）
-                running = true;
-                computeRAF = requestAnimationFrame(computeLoop);
-                spawnChildren(); // 立即裂变
-                document.getElementById('status').textContent = '🔥 裂变中...';
-                document.getElementById('start').disabled = true;
-                document.getElementById('stop').disabled = false;
+                start(); // 其他窗口已启动，本窗口自动加入
             }
-
             window.addEventListener('storage', e => {
                 if (e.key === RUN_KEY) {
-                    if (e.newValue === '1' && !running) {
-                        running = true;
-                        computeRAF = requestAnimationFrame(computeLoop);
-                        spawnChildren();
-                        document.getElementById('status').textContent = '🔥 裂变中...';
-                        document.getElementById('start').disabled = true;
-                        document.getElementById('stop').disabled = false;
-                    } else if (e.newValue === '0') {
-                        stop();
-                    }
+                    e.newValue === '1' ? start() : stop();
                 } else if (e.key === COUNT_KEY) {
                     updateCount();
                 }
             });
-
             window.addEventListener('beforeunload', () => {
                 changeCount(-1);
-                stopCompute();
+                // 窗口关闭时也停止本窗口的计算循环（避免内存泄漏）
+                if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
                 if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
                     localStorage.removeItem(RUN_KEY);
                     localStorage.removeItem(COUNT_KEY);
@@ -190,8 +160,8 @@
             });
         });
 
-        document.getElementById('start').onclick = start;
-        document.getElementById('stop').onclick = stop;
+        startBtn.onclick = start;
+        stopBtn.onclick = stop;
     </script>
 </body>
 
