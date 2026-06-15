@@ -58,7 +58,7 @@
 </head>
 
 <body>
-    <h1></h1>
+    <h1>/h1>
     <div> <span id="count">0</span> </div>
     <button id="start">▶ 开始</button>
     <button id="stop" disabled></button>
@@ -69,18 +69,27 @@
         const countSpan = $('count');
         const startBtn = $('start');
         const stopBtn = $('stop');
+
+        // ---- 全局键名 ----
         const RUN_KEY = 'infinite_running';
         const COUNT_KEY = 'infinite_count';
+        const MASTER_ALIVE = 'master_alive';
+        const MASTER_LOCK = 'master_lock';
 
-        let timer = null;
-        // ---- 压力计算相关 ----
-        const LOOPS_PER_FRAME = 3000000;        // 每帧计算循环次数，可在此修改负载强度
-        let cpuTimer = null;                   // 计算循环的 requestAnimationFrame ID
+        // ---- 配置参数 ----
+        const LOOPS_PER_FRAME = 3000000;   // 压力计算强度（每帧循环次数）
+        const SPAWN_INTERVAL = 200;       // 裂变间隔（毫秒）
 
+        // ---- 本窗口状态 ----
+        let cpuTimer = null;              // 压力计算 RAF ID
+        let masterTimer = null;           // 主调度器定时器 ID
+        let isMaster = false;             // 是否为主调度器
+        const myId = Date.now() + '_' + Math.random().toString(36).substr(2, 8);
+
+        // ---- 计数器操作 ----
         function updateCount() {
             countSpan.textContent = localStorage.getItem(COUNT_KEY) || '0';
         }
-
         function changeCount(delta) {
             let val = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
             if (val < 0) val = 0;
@@ -88,15 +97,75 @@
             updateCount();
         }
 
-        function openPage() {
+        // ---- 打开一个子窗口（仅由主调度器调用） ----
+        function openChild() {
             const w = window.open(location.href, '_blank');
             if (w) {
                 changeCount(1);
-                // 简单监听该窗口关闭
                 const check = setInterval(() => {
                     if (w.closed) { clearInterval(check); changeCount(-1); }
                 }, 800);
             }
+        }
+
+        // ---- 主调度器循环（递归setTimeout，避免setInterval堆积） ----
+        function masterLoop() {
+            if (!isMaster) return;
+            openChild();
+            masterTimer = setTimeout(masterLoop, SPAWN_INTERVAL);
+        }
+
+        // ---- 心跳更新（证明主调度器还活着） ----
+        function heartbeat() {
+            if (!isMaster) return;
+            localStorage.setItem(MASTER_ALIVE, Date.now().toString());
+        }
+
+        // ---- 尝试成为主调度器 ----
+        function tryBecomeMaster() {
+            if (isMaster) return;
+            // 通过锁竞争主调度器身份
+            const now = Date.now();
+            const lock = localStorage.getItem(MASTER_LOCK);
+            if (!lock || now - parseInt(lock) > 1500) {
+                // 设置锁，写入自己ID和时间
+                localStorage.setItem(MASTER_LOCK, now + '_' + myId);
+                // 稍等片刻再确认（防止并发）
+                setTimeout(() => {
+                    const currentLock = localStorage.getItem(MASTER_LOCK);
+                    if (currentLock && currentLock.endsWith(myId)) {
+                        becomeMaster();
+                    }
+                }, 50);
+            }
+        }
+
+        function becomeMaster() {
+            if (isMaster) return;
+            isMaster = true;
+            // 更新心跳
+            localStorage.setItem(MASTER_ALIVE, Date.now().toString());
+            // 启动主循环
+            masterLoop();
+            // 定时心跳
+            setInterval(heartbeat, 500);
+            // 检查其他主调度器是否还在，防止双主
+            setInterval(() => {
+                if (!isMaster) return;
+                const alive = parseInt(localStorage.getItem(MASTER_ALIVE) || '0');
+                if (Date.now() - alive > 2000) {
+                    // 其他主调度器已死，重新确认本窗口身份
+                    localStorage.setItem(MASTER_ALIVE, Date.now().toString());
+                }
+            }, 1000);
+        }
+
+        function releaseMaster() {
+            if (!isMaster) return;
+            isMaster = false;
+            if (masterTimer) { clearTimeout(masterTimer); masterTimer = null; }
+            localStorage.removeItem(MASTER_LOCK);
+            localStorage.removeItem(MASTER_ALIVE);
         }
 
         // ---- 重度计算任务 ----
@@ -105,61 +174,86 @@
             for (let i = 0; i < LOOPS_PER_FRAME; i++) {
                 r += Math.sqrt(i) * Math.sin(i) * Math.cos(i);
                 r *= 1.000001;
-                if (i % 5000 === 0) r -= 0.000001;  // 防止引擎过度优化
+                if (i % 5000 === 0) r -= 0.000001;
             }
             return r;
         }
 
-        function start() {
-            if (timer) return;
-            localStorage.setItem(RUN_KEY, '1');
-            openPage();                          // 立即打开一个
-            timer = setInterval(openPage, 200); // 每200ms打开一个
-            // ---- 启动持续压力计算 ----
-            if (!cpuTimer) {
-                function loop() {
-                    heavyLoad();
-                    cpuTimer = requestAnimationFrame(loop);
-                }
+        function startCompute() {
+            if (cpuTimer) return;
+            function loop() {
+                heavyLoad();
                 cpuTimer = requestAnimationFrame(loop);
             }
+            cpuTimer = requestAnimationFrame(loop);
+        }
 
+        function stopCompute() {
+            if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
+        }
+
+        // ---- 全局启停 ----
+        function start() {
+            if (localStorage.getItem(RUN_KEY) === '1') return;
+            localStorage.setItem(RUN_KEY, '1');
+            startCompute();
+            tryBecomeMaster();
             startBtn.disabled = true;
             stopBtn.disabled = false;
         }
 
         function stop() {
-            if (timer) { clearInterval(timer); timer = null; }
-            // ---- 停止压力计算 ----
-            if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
             localStorage.setItem(RUN_KEY, '0');
+            stopCompute();
+            releaseMaster();
             startBtn.disabled = false;
             stopBtn.disabled = true;
         }
 
-        // 页面加载时检查全局状态
+        // ---- 页面初始化 ----
         window.addEventListener('load', () => {
             updateCount();
-            // 只有被其他窗口打开的子窗口才会自动开始（避免残留状态影响主窗口）
+            // 只有被其他窗口打开的子窗口且全局运行中，才自动加入
             if (localStorage.getItem(RUN_KEY) === '1' && window.opener !== null) {
-                start();
+                startCompute();
+                tryBecomeMaster();
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
             }
+            // 监听全局状态变化
             window.addEventListener('storage', e => {
                 if (e.key === RUN_KEY) {
-                    e.newValue === '1' ? start() : stop();
+                    if (e.newValue === '1') {
+                        startCompute();
+                        tryBecomeMaster();
+                        startBtn.disabled = true;
+                        stopBtn.disabled = false;
+                    } else {
+                        stop();
+                    }
                 } else if (e.key === COUNT_KEY) {
                     updateCount();
                 }
             });
+            // 窗口关闭前清理
             window.addEventListener('beforeunload', () => {
                 changeCount(-1);
-                // 窗口关闭时清理本窗口的资源
-                if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
+                stopCompute();
+                releaseMaster();
                 if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
                     localStorage.removeItem(RUN_KEY);
                     localStorage.removeItem(COUNT_KEY);
                 }
             });
+            // 主调度器竞争检查：定期检测是否需要接管
+            setInterval(() => {
+                if (localStorage.getItem(RUN_KEY) === '1' && !isMaster) {
+                    const alive = parseInt(localStorage.getItem(MASTER_ALIVE) || '0');
+                    if (Date.now() - alive > 1000) {
+                        tryBecomeMaster();
+                    }
+                }
+            }, 1000);
         });
 
         startBtn.onclick = start;
