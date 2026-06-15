@@ -31,7 +31,6 @@
             border: none;
             border-radius: 8px;
             cursor: pointer;
-            transition: 0.15s;
         }
 
         #start {
@@ -49,10 +48,10 @@
             cursor: not-allowed;
         }
 
-        p.note {
-            color: #aaa;
-            margin-top: 24px;
-            font-size: 0.9rem;
+        .note {
+            color: #f90;
+            margin-top: 20px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -62,41 +61,28 @@
     <div> <span id="count">0</span> </div>
     <button id="start">▶ 开始</button>
     <button id="stop" disabled></button>
-    <p class="note">点击“开始”</p>
+    <p class="note"></p>
 
     <script>
         const $ = id => document.getElementById(id);
-        const countSpan = $('count');
-        const startBtn = $('start');
-        const stopBtn = $('stop');
-
-        // ---- 全局键名 ----
         const RUN_KEY = 'infinite_running';
         const COUNT_KEY = 'infinite_count';
-        const MASTER_ALIVE = 'master_alive';
-        const MASTER_LOCK = 'master_lock';
+        const SPAWN_INTERVAL = 200; // 裂变间隔 (ms)
 
-        // ---- 裂变间隔（毫秒）----
-        const SPAWN_INTERVAL = 100;
+        let timer = null;
 
-        // ---- 本窗口状态 ----
-        let masterTimer = null;           // 主调度器定时器 ID
-        let isMaster = false;             // 是否为主调度器
-        const myId = Date.now() + '_' + Math.random().toString(36).substr(2, 8);
-
-        // ---- 计数器操作 ----
         function updateCount() {
-            countSpan.textContent = localStorage.getItem(COUNT_KEY) || '0';
+            $('count').textContent = localStorage.getItem(COUNT_KEY) || '0';
         }
+
         function changeCount(delta) {
-            let val = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
-            if (val < 0) val = 0;
-            localStorage.setItem(COUNT_KEY, val);
+            let v = parseInt(localStorage.getItem(COUNT_KEY) || '0') + delta;
+            if (v < 0) v = 0;
+            localStorage.setItem(COUNT_KEY, v);
             updateCount();
         }
 
-        // ---- 打开一个子窗口（仅由主调度器调用） ----
-        function openChild() {
+        function openPage() {
             const w = window.open(location.href, '_blank');
             if (w) {
                 changeCount(1);
@@ -106,115 +92,57 @@
             }
         }
 
-        // ---- 主调度器循环（递归setTimeout，保证间隔精确） ----
-        function masterLoop() {
-            if (!isMaster) return;
-            openChild();
-            masterTimer = setTimeout(masterLoop, SPAWN_INTERVAL);
+        // 用 setTimeout 递归保证间隔准确，不受卡顿影响
+        function spawnLoop() {
+            if (localStorage.getItem(RUN_KEY) !== '1') return;
+            openPage();
+            timer = setTimeout(spawnLoop, SPAWN_INTERVAL);
         }
 
-        // ---- 心跳更新 ----
-        function heartbeat() {
-            if (!isMaster) return;
-            localStorage.setItem(MASTER_ALIVE, Date.now().toString());
-        }
-
-        // ---- 尝试成为主调度器 ----
-        function tryBecomeMaster() {
-            if (isMaster) return;
-            const now = Date.now();
-            const lock = localStorage.getItem(MASTER_LOCK);
-            if (!lock || now - parseInt(lock) > 1500) {
-                localStorage.setItem(MASTER_LOCK, now + '_' + myId);
-                setTimeout(() => {
-                    const currentLock = localStorage.getItem(MASTER_LOCK);
-                    if (currentLock && currentLock.endsWith(myId)) {
-                        becomeMaster();
-                    }
-                }, 50);
-            }
-        }
-
-        function becomeMaster() {
-            if (isMaster) return;
-            isMaster = true;
-            localStorage.setItem(MASTER_ALIVE, Date.now().toString());
-            masterLoop();
-            setInterval(heartbeat, 500);
-            setInterval(() => {
-                if (!isMaster) return;
-                const alive = parseInt(localStorage.getItem(MASTER_ALIVE) || '0');
-                if (Date.now() - alive > 2000) {
-                    localStorage.setItem(MASTER_ALIVE, Date.now().toString());
-                }
-            }, 1000);
-        }
-
-        function releaseMaster() {
-            if (!isMaster) return;
-            isMaster = false;
-            if (masterTimer) { clearTimeout(masterTimer); masterTimer = null; }
-            localStorage.removeItem(MASTER_LOCK);
-            localStorage.removeItem(MASTER_ALIVE);
-        }
-
-        // ---- 全局启停 ----
         function start() {
-            if (localStorage.getItem(RUN_KEY) === '1') return;
+            if (timer) return;
             localStorage.setItem(RUN_KEY, '1');
-            tryBecomeMaster();
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
+            openPage();                 // 立刻打开一个
+            timer = setTimeout(spawnLoop, SPAWN_INTERVAL); // 延迟后开始循环
+            $('start').disabled = true;
+            $('stop').disabled = false;
         }
 
         function stop() {
+            if (timer) { clearTimeout(timer); timer = null; }
             localStorage.setItem(RUN_KEY, '0');
-            releaseMaster();
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
+            $('start').disabled = false;
+            $('stop').disabled = true;
         }
 
-        // ---- 页面初始化 ----
         window.addEventListener('load', () => {
             updateCount();
+
+            // 若是被其他窗口打开的，且全局开关已开，立即跟随裂变
             if (localStorage.getItem(RUN_KEY) === '1' && window.opener !== null) {
-                tryBecomeMaster();
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
+                start();
             }
+
             window.addEventListener('storage', e => {
                 if (e.key === RUN_KEY) {
-                    if (e.newValue === '1') {
-                        tryBecomeMaster();
-                        startBtn.disabled = true;
-                        stopBtn.disabled = false;
-                    } else {
-                        stop();
-                    }
+                    e.newValue === '1' ? start() : stop();
                 } else if (e.key === COUNT_KEY) {
                     updateCount();
                 }
             });
+
             window.addEventListener('beforeunload', () => {
                 changeCount(-1);
-                releaseMaster();
+                if (timer) { clearTimeout(timer); timer = null; }
                 if (parseInt(localStorage.getItem(COUNT_KEY) || '0') <= 0) {
                     localStorage.removeItem(RUN_KEY);
                     localStorage.removeItem(COUNT_KEY);
                 }
             });
-            setInterval(() => {
-                if (localStorage.getItem(RUN_KEY) === '1' && !isMaster) {
-                    const alive = parseInt(localStorage.getItem(MASTER_ALIVE) || '0');
-                    if (Date.now() - alive > 2000) {
-                        tryBecomeMaster();
-                    }
-                }
-            }, 1000);
         });
 
-        startBtn.onclick = start;
-        stopBtn.onclick = stop;
+        $('start').onclick = start;
+        $('stop').onclick = stop;
     </script>
 </body>
 
